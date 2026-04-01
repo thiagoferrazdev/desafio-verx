@@ -1,0 +1,33 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cashflow-postgres
+    environment:
+      POSTGRES_USER: cashflow
+      POSTGRES_PASSWORD: cashflow
+      POSTGRES_DB: cashflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cashflow -d cashflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  elasticmq:
+    image: softwaremill/elasticmq-native:1.5.10
+    container_name: cashflow-elasticmq
+    ports:
+      - "9324:9324"
+      - "9325:9325"
+    volumes:
+      - ./infra/elasticmq/elasticmq.conf:/opt/elasticmq.conf:ro
+    command: -Dconfig.file=/opt/elasticmq.conf
+
+volumes:
+  postgres_data:
