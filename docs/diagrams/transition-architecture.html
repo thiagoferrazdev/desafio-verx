@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arquitetura de Transição</title>
+  <style>
+    :root {
+      --bg: #f4f7fb;
+      --ink: #0f172a;
+      --muted: #526071;
+      --line: #d7e0ea;
+      --card: #ffffff;
+      --accent: #1d4ed8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: radial-gradient(circle at top, #ffffff 0%, var(--bg) 70%);
+      color: var(--ink);
+      font-family: Aptos, "Segoe UI", Arial, sans-serif;
+      padding: 32px;
+    }
+    .shell {
+      max-width: 1520px;
+      margin: 0 auto;
+      background: rgba(255,255,255,0.72);
+      border: 1px solid rgba(215,224,234,0.95);
+      border-radius: 28px;
+      box-shadow: 0 20px 60px rgba(15,23,42,0.08);
+      overflow: hidden;
+      backdrop-filter: blur(10px);
+    }
+    header {
+      padding: 28px 32px 18px;
+      border-bottom: 1px solid var(--line);
+      background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(248,250,252,0.9));
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 34px;
+      line-height: 1.1;
+    }
+    p {
+      margin: 0;
+      font-size: 17px;
+      line-height: 1.5;
+      color: var(--muted);
+    }
+    .canvas {
+      padding: 20px;
+    }
+    .canvas img {
+      width: 100%;
+      height: auto;
+      display: block;
+      border-radius: 20px;
+      background: white;
+    }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      padding: 0 20px 24px;
+    }
+    .note {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px 18px 16px;
+    }
+    .note h2 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+    .note p {
+      font-size: 15px;
+    }
+    @media (max-width: 1100px) {
+      .notes { grid-template-columns: 1fr; }
+      body { padding: 16px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header>
+      <h1>Arquitetura de Transição</h1>
+      <p>Visual executivo da evolução da solução, alinhado à documentação de gaps, roadmap e critérios de maturidade arquitetural.</p>
+    </header>
+    <section class="canvas">
+      <img src="/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/diagrams/transition-architecture.svg" alt="Arquitetura de transição em três fases">
+    </section>
+    <section class="notes">
+      <article class="note">
+        <h2>Fase 1</h2>
+        <p>Representa uma referência mínima de deploy do desenho atual. Não deve ser lida como fotografia do que já está implementado hoje no repositório.</p>
+      </article>
+      <article class="note">
+        <h2>Fase 2</h2>
+        <p>Materializa os principais gaps documentados: separação física por contexto, replay controlado, robustez do publisher e endurecimento do consumo idempotente.</p>
+      </article>
+      <article class="note">
+        <h2>Fase 3</h2>
+        <p>Consolida maturidade operacional com SLOs, analytics downstream, governança de plataforma e observabilidade de nível corporativo.</p>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

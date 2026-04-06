@@ -1,151 +1,190 @@
-# Desafio Verx — Fluxo de caixa diário
+# Desafio Verx - Fluxo de Caixa Diário
 
-Monorepo em **TypeScript** com **NestJS**, organizado em **Clean Architecture** (domínio, casos de uso, portas e adaptadores). Dois serviços HTTP compartilham **PostgreSQL** e integram-se por fila **SQS**; em desenvolvimento local a fila é simulada com **ElasticMQ** (API compatível com a AWS).
+Este repositório apresenta uma solução para registro de lançamentos financeiros e consolidação de saldo diário por comerciante. A implementação foi feita em **TypeScript + NestJS**, com **Clean Architecture**, comunicação assíncrona por eventos e uma leitura otimizada por projeção materializada.
 
-## Visão geral
+O foco do case não é apenas mostrar que a API funciona. O objetivo é deixar explícito o raciocínio de arquitetura:
 
-| Serviço | Porta padrão | Função |
-|--------|---------------|--------|
-| **ledger-service** | `3000` | Lançamentos (crédito/débito), idempotência por `requestId`, padrão **outbox** para publicar o evento `entry-created` na fila. |
-| **daily-balance-service** | `3001` | Consome a fila, projeta saldo diário por comerciante e expõe consulta por data. |
+- por que a escrita foi separada da leitura;
+- por que a integração é assíncrona;
+- por que a consistência eventual foi aceita;
+- quais gaps ainda existem;
+- como a solução pode evoluir sem perder a base atual.
 
-Fluxo resumido:
+## Visão executiva
 
-1. Cliente chama `POST /entries` no ledger.
-2. Em uma transação: grava o lançamento, a idempotência e uma linha em `ledger.outbox_events`.
-3. Um processo periódico publica eventos pendentes na fila SQS.
-4. O serviço de saldo faz *poll* da mesma fila, aplica o evento de forma idempotente (`balance.processed_messages`) e atualiza `balance.daily_balances`.
+A solução foi organizada em dois contextos:
 
-Os esquemas SQL estão em `infra/postgres/init.sql` (`ledger` e `balance`).
+- **Ledger**: recebe créditos e débitos, garante idempotência por `requestId`, grava a outbox e preserva a integridade da escrita.
+- **Daily Balance**: consome eventos `entry-created`, consolida o saldo diário e expõe a consulta agregada.
 
-## Pré-requisitos
+Essa separação foi escolhida para manter:
 
-- **Node.js** (recomendado 20+)
-- **Docker** e **Docker Compose**
+- a escrita transacional simples e confiável;
+- a leitura rápida e barata;
+- a integração desacoplada por eventos;
+- a evolução futura da arquitetura mais natural.
 
-## Infraestrutura local
+## Diagrama de alto nível
 
-Na raiz do repositório:
+```mermaid
+flowchart LR
+    client["Cliente ou sistema chamador"]
+    ledger["ledger-service"]
+    ledgerdb[("PostgreSQL / schema ledger")]
+    outbox["Outbox publisher"]
+    queue["SQS / ElasticMQ"]
+    balance["daily-balance-service"]
+    balancedb[("PostgreSQL / schema balance")]
+
+    client --> ledger
+    ledger --> ledgerdb
+    ledgerdb --> outbox
+    outbox --> queue
+    queue --> balance
+    balance --> balancedb
+```
+
+## Documentação detalhada
+
+Os Markdown abaixo passam a ser a fonte textual de verdade da solução:
+
+- [01-visao-geral.md](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/01-visao-geral.md)
+- [02-dominios-e-capacidades.md](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/02-dominios-e-capacidades.md)
+- [03-arquitetura-e-integracoes.md](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/03-arquitetura-e-integracoes.md)
+- [04-decisoes-tecnicas-e-nfrs.md](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/04-decisoes-tecnicas-e-nfrs.md)
+- [05-testes-e-validacao.md](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/05-testes-e-validacao.md)
+- [06-evolucao-da-arquitetura.md](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/06-evolucao-da-arquitetura.md)
+
+Diagramas fonte:
+
+- [solution-overview.svg](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/diagrams/solution-overview.svg) - C4 nível 1, contexto do sistema
+- [architecture-c4.svg](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/diagrams/architecture-c4.svg) - C4 nível 2, containers
+- [transition-architecture.svg](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/diagrams/transition-architecture.svg)
+- [transition-architecture.html](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/diagrams/transition-architecture.html)
+
+PDFs gerados a partir dessa base:
+
+- [docs/pdf](/Users/thiagoferraz/Documents/pessoal/desafio-verx/docs/pdf)
+
+## O que a solução entrega hoje
+
+- `POST /entries`
+- `GET /entries?merchantId=...`
+- `GET /daily-balance?merchantId=...&date=YYYY-MM-DD`
+- `GET /health`
+- evento de integração `entry-created`
+- idempotência na entrada HTTP
+- idempotência no consumo assíncrono
+- publicação de eventos via Transactional Outbox
+
+## O que a validação mostrou
+
+Nesta revisão, os seguintes comandos foram executados com sucesso:
+
+```bash
+npm install
+npm run build
+npm test
+npm run test:e2e
+```
+
+Também foi identificado e corrigido um gap operacional no ambiente local:
+
+- a imagem `softwaremill/elasticmq-native:1.5.10` não estava mais disponível;
+- o `docker-compose.yml` foi atualizado para `softwaremill/elasticmq-native`.
+
+Os gaps arquiteturais abertos continuam documentados de forma explícita, em vez de serem escondidos.
+
+## Principais gaps assumidos
+
+- concorrência do publisher da outbox ainda é simples;
+- política de retry e DLQ ainda não existe;
+- observabilidade ainda é básica;
+- banco ainda é compartilhado entre contextos;
+- a leitura é eventualmente consistente, e não imediata.
+
+Esses pontos aparecem nos docs como:
+
+- limitação atual;
+- trade-off assumido;
+- evolução futura recomendada.
+
+## Como executar
+
+### Pré-requisitos
+
+- Node.js 20+
+- Docker
+- Docker Compose
+
+### Infraestrutura local
 
 ```bash
 docker compose up -d
 ```
 
-Sobe:
-
-- **PostgreSQL 16** em `localhost:5432` (usuário, senha e banco: `cashflow`), com `init.sql` aplicado na primeira subida.
-- **ElasticMQ** em `localhost:9324`, com a fila `entry-created` definida em `infra/elasticmq/elasticmq.conf`.
-
-## Instalação e build
+### Instalação e build
 
 ```bash
 npm install
 npm run build
 ```
 
-A saída compilada fica em `dist/` (ignorada pelo Git).
+### Execução em desenvolvimento
 
-## Executar em desenvolvimento
-
-Com o Docker no ar, em dois terminais:
+Em um terminal:
 
 ```bash
 npm run dev:ledger
 ```
 
+Em outro terminal:
+
 ```bash
 npm run dev:daily-balance
 ```
 
-Após `npm run build`, o equivalente é:
-
-```bash
-npm run start:ledger
-npm run start:daily-balance
-```
-
-Para SQS local, configure `SQS_ENDPOINT` (veja a tabela abaixo) nos dois processos.
-
-## Variáveis de ambiente
-
-Valores padrão costumam bastar para `docker compose` na máquina local.
-
-| Variável | Descrição | Padrão (exemplo) |
-|----------|-----------|------------------|
-| `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD` | PostgreSQL | `localhost`, `5432`, `cashflow`, `cashflow`, `cashflow` |
-| `LEDGER_PORT` | HTTP do ledger | `3000` |
-| `DAILY_BALANCE_PORT` | HTTP do saldo diário | `3001` |
-| `API_KEY` | Se definida, exige o header `x-api-key` | *(vazio = sem autenticação)* |
-| `SQS_QUEUE_URL` | Fila usada pelo publisher e pelo consumer | `http://localhost:9324/000000000000/entry-created` |
-| `SQS_REGION` | Região do cliente AWS SDK | `us-east-1` |
-| `SQS_ENDPOINT` | Endpoint (ElasticMQ local) | ex.: `http://localhost:9324` |
-| `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY` | Credenciais do SDK (local: placeholders) | `test` / `test` |
-| `OUTBOX_PUBLISH_INTERVAL_MS` | Intervalo do publicador outbox (ledger) | `2000` |
-| `SQS_POLL_INTERVAL_MS` | Intervalo do poller (daily-balance) | `2000` |
-
-## API
-
-Com `API_KEY` definida, envie `x-api-key: <valor>` nas rotas abaixo.
-
-### Ledger (`LEDGER_PORT`, padrão 3000)
-
-- `POST /entries` — cria lançamento.
-- `GET /entries?merchantId=...` — lista lançamentos (filtro opcional).
-
-Exemplo de corpo (`type`: `DEBIT` ou `CREDIT`; `amount` em unidades monetárias, ex.: reais):
-
-```json
-{
-  "merchantId": "merchant-1",
-  "type": "CREDIT",
-  "amount": 100.5,
-  "description": "Venda",
-  "occurredAt": "2026-04-01T12:00:00.000Z",
-  "requestId": "req-unique-001"
-}
-```
-
-### Daily balance (`DAILY_BALANCE_PORT`, padrão 3001)
-
-- `GET /daily-balance?merchantId=...&date=YYYY-MM-DD` — saldo agregado do dia.
-
-### Ambos
-
-- `GET /health` — verificação de saúde.
-
-## Testes
+### Testes
 
 ```bash
 npm test
 npm run test:e2e
 ```
 
-Informações sobre testes de carga: `npm run test:load:info`.
+Informações sobre teste de carga:
 
-## Estrutura do repositório
-
-```
-apps/
-  ledger-service/          # API de lançamentos, outbox, publisher SQS
-  daily-balance-service/     # Poller SQS, projeção de saldo, API de consulta
-libs/
-  contracts/                 # Eventos (ex.: entry-created)
-  observability/             # Logger, correlation id, filtros, health
-  shared-infra/              # Postgres, API key
-  shared-kernel/             # Regras compartilhadas (ex.: Money)
-docs/                        # Diagramas (drawio) e PDFs de arquitetura
-infra/
-  postgres/                  # init.sql
-  elasticmq/                 # elasticmq.conf
-test/
-  e2e/                       # Testes ponta a ponta
-  load/                      # Scripts de carga
+```bash
+npm run test:load:info
 ```
 
-## Stack principal
+## Variáveis de ambiente
 
-NestJS 10, PostgreSQL (`pg`), AWS SDK (SQS), class-validator, Jest.
+| Variável | Descrição | Padrão |
+|---|---|---|
+| `DB_HOST` | Host do PostgreSQL | `localhost` |
+| `DB_PORT` | Porta do PostgreSQL | `5432` |
+| `DB_NAME` | Nome do banco | `cashflow` |
+| `DB_USER` | Usuário do banco | `cashflow` |
+| `DB_PASSWORD` | Senha do banco | `cashflow` |
+| `LEDGER_PORT` | Porta do `ledger-service` | `3000` |
+| `DAILY_BALANCE_PORT` | Porta do `daily-balance-service` | `3001` |
+| `API_KEY` | Chave opcional para `x-api-key` | vazio |
+| `SQS_QUEUE_URL` | URL da fila | `http://localhost:9324/000000000000/entry-created` |
+| `SQS_REGION` | Região AWS SDK | `us-east-1` |
+| `SQS_ENDPOINT` | Endpoint do ElasticMQ | `http://localhost:9324` |
+| `AWS_ACCESS_KEY_ID` | Credencial local do SDK | `test` |
+| `AWS_SECRET_ACCESS_KEY` | Credencial local do SDK | `test` |
+| `OUTBOX_PUBLISH_INTERVAL_MS` | Intervalo do publisher | `2000` |
+| `SQS_POLL_INTERVAL_MS` | Intervalo do poller | `2000` |
 
----
+## Conclusão arquitetural
 
-Projeto de referência para arquitetura de fluxo de caixa com consistência eventual via fila e idempotência nas bordas.
+Para o escopo do desafio, a solução entrega uma base arquitetural sólida:
+
+- separa bem os domínios;
+- usa outbox e idempotência de forma coerente;
+- torna a consistência eventual uma decisão consciente;
+- fornece uma leitura otimizada por projeção materializada;
+- preserva um caminho claro de evolução futura.
+
+Ao mesmo tempo, os limites atuais ficam explicitados no próprio material, o que torna a entrega mais honesta, profissional e defensável do ponto de vista de arquitetura de soluções.
